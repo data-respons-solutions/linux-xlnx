@@ -109,6 +109,8 @@
 	};
 	
 	mdio {
+		#address-cells = <1>;
+		#size-cells = <0>;
 		ethphy0: ethernet-phy@1 {
 			reg = <1>;
 		};
@@ -776,11 +778,11 @@
 		spi-max-frequency = <108000000>; /* Based on DC1 spec */
 		partition@qspi-fsbl-uboot { /* for testing purpose */
 			label = "qspi-fsbl-uboot";
-			reg = <0x0 0x200000>;
+			reg = <0x0 0x2000000>;
 		};
 		partition@qspi-linux { /* for testing purpose */
 			label = "qspi-linux";
-			reg = <0x300000 0x500000>;
+			reg = <0x2000000 0x2000000>;
 		};
 	};
 };
@@ -831,13 +833,13 @@
 
 /* ULPI SMSC USB3320 */
 &usb0 {
-	status = "disabled";
+	status = "okay";
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_usb0_default>;
 };
 
 &dwc3_0 {
-	status = "disabled";
+	status = "okay";
 	dr_mode = "host";
 	snps,usb3_lpm_capable;
 	phy-names = "usb3-phy";

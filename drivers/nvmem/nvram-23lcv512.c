@@ -7,7 +7,7 @@
 #include <linux/nvmem-provider.h>
 
 #define CADENCE_BROKEN
-#define RAM_SIZE 0x20
+#define RAM_SIZE 0x10000
 
 struct micro_23lcv512_priv {
 	struct nvmem_config conf;

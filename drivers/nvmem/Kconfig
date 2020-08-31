@@ -230,4 +230,10 @@ config NVMEM_ZYNQMP
 
 	  If sure, say yes. If unsure, say no.
 
+config NVMEM_23LCV512
+	bool "Microsemi SPI NVRAM"
+	depends on SPI
+	help
+	  Battery backed serial RAM
+
 endif

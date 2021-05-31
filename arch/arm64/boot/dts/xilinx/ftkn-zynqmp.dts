@@ -10,7 +10,7 @@
 /dts-v1/;
 
 #include "ftkn-zynqmp.dtsi"
-#include "ftkn-zynqmp-pl.dtsi"
+
 / {
 	model = "ZynqMP FTKN PL";
 	aliases {

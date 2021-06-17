@@ -1,0 +1,4 @@
+config DATARESPONS_VIDEO_VDMA
+	tristate "Data Respons VDMA Driver"
+	help
+	  Enable support for Data Respons driver

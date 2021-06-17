@@ -2,3 +2,8 @@ config DATARESPONS_VIDEO_VDMA
 	tristate "Data Respons VDMA Driver"
 	help
 	  Enable support for Data Respons driver
+
+config DATARESPONS_VIDEO_MIXER
+	tristate "Data Respons Video Mixer"
+	help
+	  Data Respons Video Mixer configuration driver

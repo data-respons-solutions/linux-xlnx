@@ -7,3 +7,8 @@ config DATARESPONS_VIDEO_MIXER
 	tristate "Data Respons Video Mixer"
 	help
 	  Data Respons Video Mixer configuration driver
+
+config DATARESPONS_VIDEO_TPG
+	tristate "Data Respons Video Test Pattern Generator"
+	help
+	  Data Respons Video Test Patterm Generator configuration driver

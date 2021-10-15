@@ -17,3 +17,8 @@ config DATARESPONS_VIDEO_VPSS
 	tristate "Data Respons VPSS driver"
 	help
 	  Data Respons Video Process SubSystem driver
+
+config DATARESPONS_VIDEO_BT656AT
+	tristate "Data Respons BT656 to AXIS transcoder driver"
+	help
+	  Data Respons BT656 to AXIS transcoder driver

@@ -4,3 +4,4 @@ obj-$(CONFIG_DATARESPONS_VIDEO_TPG) += video-tpg.o
 obj-$(CONFIG_DATARESPONS_VIDEO_VPSS) += video-vpss.o
 obj-$(CONFIG_DATARESPONS_VIDEO_BT656AT) += video-bt656at.o
 obj-$(CONFIG_DATARESPONS_VIDEO_SYNC) += video-sync.o
+obj-$(CONFIG_DATARESPONS_DRM_PANEL_VDMA) += panel-vdma.o

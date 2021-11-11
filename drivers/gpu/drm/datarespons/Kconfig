@@ -27,3 +27,9 @@ config DATARESPONS_VIDEO_SYNC
 	tristate "Data Respons Video Sync driver"
 	help
 	  Data Respons Video Sync driver
+
+config DATARESPONS_DRM_PANEL_VDMA
+	tristate "Data Respons VDMA DRM panel driver"
+	help
+	  This driver supports Data Respons VDMA panels that are managed
+	  by FPGA hardware

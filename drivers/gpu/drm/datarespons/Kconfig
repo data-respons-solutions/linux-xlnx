@@ -33,3 +33,8 @@ config DATARESPONS_DRM_PANEL_VDMA
 	help
 	  This driver supports Data Respons VDMA panels that are managed
 	  by FPGA hardware
+
+config DATARESPONS_DRM
+	tristate "Data Respons DRM driver"
+	help
+	  This driver manages the DRM pipeline

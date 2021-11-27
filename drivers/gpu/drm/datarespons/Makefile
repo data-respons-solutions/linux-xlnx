@@ -6,3 +6,4 @@ obj-$(CONFIG_DATARESPONS_VIDEO_BT656AT) += video-bt656at.o
 obj-$(CONFIG_DATARESPONS_VIDEO_SYNC) += video-sync.o
 obj-$(CONFIG_DATARESPONS_DRM_PANEL_VDMA) += panel-vdma.o
 obj-$(CONFIG_DATARESPONS_DRM) += video-drm.o
+obj-$(CONFIG_DATARESPONS_VIDEO_VDMA_CONSOLIDATOR) += video-vdma-consolidator.o

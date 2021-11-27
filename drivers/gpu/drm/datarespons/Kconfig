@@ -38,3 +38,8 @@ config DATARESPONS_DRM
 	tristate "Data Respons DRM driver"
 	help
 	  This driver manages the DRM pipeline
+
+config DATARESPONS_VIDEO_VDMA_CONSOLIDATOR
+	tristate "Data Respons VDMA consolidator"
+	help
+	  This driver enables the VDMA consolidator

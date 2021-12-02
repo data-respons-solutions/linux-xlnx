@@ -54,10 +54,12 @@
 #define VIDEO_SYNC_STATUS_FRAME_DONE_MASK	(1    <<  4)
 #define VIDEO_SYNC_STATUS_SHORT_LINE_ERR_MASK	(1    <<  5)
 #define VIDEO_SYNC_STATUS_LONG_LINE_ERR_MASK	(1    <<  6)
-#define VIDEO_SYNC_STATUS_SYNC_FIELD_MASK	(1    <<  7)
-#define VIDEO_SYNC_STATUS_FIELD_EXT_MASK	(1    <<  8)
-#define VIDEO_SYNC_STATUS_DMA_BUF_INDEX_MASK	(0x3F <<  9)
-#define VIDEO_SYNC_STATUS_PL_LATE_MASK		(1    << 16)
+#define VIDEO_SYNC_STATUS_SYNC_TX_MASK		(1    <<  7)
+#define VIDEO_SYNC_STATUS_SYNC_FIELD_MASK	(1    <<  8)
+#define VIDEO_SYNC_STATUS_COMPLETED_FIELD_MASK	(1    <<  9)
+#define VIDEO_SYNC_STATUS_FIELD_EXT_MASK	(1    << 10)
+#define VIDEO_SYNC_STATUS_DMA_BUF_INDEX_MASK	(0x1F << 11)
+#define VIDEO_SYNC_STATUS_PL_LATE_MASK		(1    << 24)
 
 #define VIDEO_SYNC_TOTAL_SIZE_WIDTH_MASK	(0xFFF <<  0)
 #define VIDEO_SYNC_TOTAL_SIZE_HEIGHT_MASK	(0xFFF << 16)
@@ -73,6 +75,9 @@
 #define VIDEO_SYNC_IRQ_URUN_MASK	(1 << 2)
 #define VIDEO_SYNC_IRQ_SYNC_TO_MASK	(1 << 3)
 #define VIDEO_SYNC_IRQ_FRAME_DONE_MASK	(1 << 4)
+#define VIDEO_SYNC_IRQ_ERR_SHORT_MASK	(1 << 5)
+#define VIDEO_SYNC_IRQ_ERR_LONG_MASK	(1 << 6)
+#define VIDEO_SYNC_IRQ_FRAME_SYNC_MASK	(1 << 7)
 
 #define MAX_VIDEO_SYNCHRONIZERS	4
 
@@ -102,6 +107,9 @@ struct video_sync_info {
 	bool urun_err_irq_enabled;
 	bool sync_to_err_irq_enabled;
 	bool frame_done_irq_enabled;
+	bool err_short_irq_enabled;
+	bool err_long_irq_enabled;
+	bool frame_sync_irq_enabled;
 
 	u32 version;
 
@@ -112,6 +120,8 @@ struct video_sync_info {
 	u32 short_line_err;
 	u32 long_line_err;
 	u32 frames_done;
+	u32 even_frames_done;
+	u32 odd_frames_done;
 
 	u32 dma_buf_index;
 
@@ -139,6 +149,7 @@ struct video_sync {
 	struct device *dev;
 	struct class *pclass;
 
+	bool interlaced;
 	bool vblank_enabled;
 
 	u32 pl_err;
@@ -148,10 +159,13 @@ struct video_sync {
 	u32 short_line_err;
 	u32 long_line_err;
 	u32 frames_done;
+	u32 even_frames_done;
+	u32 odd_frames_done;
 
 	struct platform_device *master;
 	struct video_crtc crtc;
 	struct drm_device *drm;
+	struct vdma_channel *video_vdma;
 
 	struct video_sync_plane overlay_plane;
 	struct drm_pending_vblank_event *vblank_event;
@@ -229,6 +243,8 @@ static irqreturn_t irq_handler(int irq, void *data)
 	u32 ctrl;
 	u32 status;
 
+	bool even;
+
 	unsigned long flags;
 
 	synchronizer = data;
@@ -273,6 +289,17 @@ static irqreturn_t irq_handler(int irq, void *data)
 			}
 			spin_unlock_irqrestore(&synchronizer->drm->event_lock, flags);
 		}
+	}
+	if (synchronizer->interlaced &&
+		((status & VIDEO_SYNC_STATUS_SYNC_TX_MASK) != 0)) {
+		even = ((status & VIDEO_SYNC_STATUS_SYNC_FIELD_MASK) == 0);
+		if (even) {
+			++synchronizer->even_frames_done;
+		} else {
+			++synchronizer->odd_frames_done;
+		}
+		vdma_toggle_interlaced_buffer(synchronizer->overlay_plane.vdma, even);
+		vdma_toggle_interlaced_buffer(synchronizer->video_vdma, even);
 	}
 	ctrl = ioread32(synchronizer->regs + VIDEO_SYNC_CONTROL_REGISTER);
 	ctrl |= VIDEO_SYNC_CTRL_CLRIRQ_MASK;
@@ -331,11 +358,13 @@ static long video_sync_ioctl(struct file *file, unsigned int cmd, unsigned long 
 					(((reg & VIDEO_SYNC_STATUS_LONG_LINE_ERR_MASK) != 0) ? 1 : 0);
 				info->frames_done = 0;
 			}
+			info->even_frames_done = synchronizer->even_frames_done;
+			info->odd_frames_done  = synchronizer->odd_frames_done;
 			info->sync_field = ((reg & VIDEO_SYNC_STATUS_SYNC_FIELD_MASK) != 0);
 			info->field_ext  = ((reg & VIDEO_SYNC_STATUS_FIELD_EXT_MASK) != 0);
 			info->pl_late    = ((reg & VIDEO_SYNC_STATUS_PL_LATE_MASK) != 0);
 			info->dma_buf_index = ((reg &
-					VIDEO_SYNC_STATUS_DMA_BUF_INDEX_MASK) >> 9);
+					VIDEO_SYNC_STATUS_DMA_BUF_INDEX_MASK) >> 11);
 
 			reg = ioread32(synchronizer->regs + VIDEO_SYNC_TOTAL_SIZE_REGISTER);
 			info->total_width  =  (reg & VIDEO_SYNC_TOTAL_SIZE_WIDTH_MASK);
@@ -358,6 +387,12 @@ static long video_sync_ioctl(struct file *file, unsigned int cmd, unsigned long 
 						((reg & VIDEO_SYNC_IRQ_SYNC_TO_MASK) != 0);
 			info->frame_done_irq_enabled =
 						((reg & VIDEO_SYNC_IRQ_FRAME_DONE_MASK) != 0);
+			info->err_short_irq_enabled =
+						((reg & VIDEO_SYNC_IRQ_ERR_SHORT_MASK) != 0);
+			info->err_long_irq_enabled =
+						((reg & VIDEO_SYNC_IRQ_ERR_LONG_MASK) != 0);
+			info->frame_sync_irq_enabled =
+						((reg & VIDEO_SYNC_IRQ_FRAME_SYNC_MASK) != 0);
 
 			info->version = ioread32(synchronizer->regs +
 							VIDEO_SYNC_FW_VERSION_REGISTER);
@@ -384,6 +419,15 @@ static long video_sync_ioctl(struct file *file, unsigned int cmd, unsigned long 
 			}
 			if (info->pl_err_irq_enabled) {
 				reg |= VIDEO_SYNC_IRQ_PL_ERR_MASK;
+			}
+			if (info->err_short_irq_enabled) {
+				reg |= VIDEO_SYNC_IRQ_ERR_SHORT_MASK;
+			}
+			if (info->err_long_irq_enabled) {
+				reg |= VIDEO_SYNC_IRQ_ERR_LONG_MASK;
+			}
+			if (info->frame_sync_irq_enabled) {
+				reg |= VIDEO_SYNC_IRQ_FRAME_SYNC_MASK;
 			}
 			iowrite32(reg, synchronizer->regs + VIDEO_SYNC_IRQ_ENABLE_REGISTER);
 
@@ -908,7 +952,6 @@ static int video_sync_probe(struct platform_device *pdev)
 	int rc;
 
 	bool use_ext_sync;
-	bool interlaced;
 	bool irq;
 	bool videoen;
 	bool dyn_blend;
@@ -924,9 +967,10 @@ static int video_sync_probe(struct platform_device *pdev)
 	u32 delay_ext_sync;
 	u32 delay_pl;
 	u32 ctrl;
+	u32 irqreg;
 
-	struct platform_device *overlay_vdma_pdev;
-	struct device_node *overlay_vdma_node;
+	struct platform_device *vdma_pdev;
+	struct device_node *vdma_node;
 	struct device_node *node;
 
 	void __iomem *regs;
@@ -1001,12 +1045,13 @@ static int video_sync_probe(struct platform_device *pdev)
 	iowrite32(delay,       regs + VIDEO_SYNC_DELAY_LINES_REGISTER);
 
 	use_ext_sync = of_property_read_bool(node, "use-external-sync");
-	interlaced   = of_property_read_bool(node, "interlaced");
 	irq          = of_property_read_bool(node, "interrupts");
 	videoen      = of_property_read_bool(node, "video-overlay");
 	dyn_blend    = of_property_read_bool(node, "dynamic-blend");
 	vdma_slave   = of_property_read_bool(node, "vdma-slave");
 
+	synchronizers[synchronizers_probed]->interlaced =
+			of_property_read_bool(node, "interlaced");
 	synchronizers[synchronizers_probed]->regs = regs;
 	synchronizers[synchronizers_probed]->pdev = pdev;
 	synchronizers[synchronizers_probed]->irq  = -1;
@@ -1014,20 +1059,22 @@ static int video_sync_probe(struct platform_device *pdev)
 	synchronizers[synchronizers_probed]->vblank_event   = NULL;
 	synchronizers[synchronizers_probed]->vblank_enabled = false;
 
-	synchronizers[synchronizers_probed]->pl_err         = 0;
-	synchronizers[synchronizers_probed]->sof_err        = 0;
-	synchronizers[synchronizers_probed]->urun_err       = 0;
-	synchronizers[synchronizers_probed]->sync_to_err    = 0;
-	synchronizers[synchronizers_probed]->short_line_err = 0;
-	synchronizers[synchronizers_probed]->long_line_err  = 0;
-	synchronizers[synchronizers_probed]->frames_done    = 0;
+	synchronizers[synchronizers_probed]->pl_err           = 0;
+	synchronizers[synchronizers_probed]->sof_err          = 0;
+	synchronizers[synchronizers_probed]->urun_err         = 0;
+	synchronizers[synchronizers_probed]->sync_to_err      = 0;
+	synchronizers[synchronizers_probed]->short_line_err   = 0;
+	synchronizers[synchronizers_probed]->long_line_err    = 0;
+	synchronizers[synchronizers_probed]->frames_done      = 0;
+	synchronizers[synchronizers_probed]->even_frames_done = 0;
+	synchronizers[synchronizers_probed]->odd_frames_done  = 0;
 
 	ctrl = 0;
+	if (synchronizers[synchronizers_probed]->interlaced) {
+		ctrl |= VIDEO_SYNC_CTRL_ILACE_MASK;
+	}
 	if (use_ext_sync) {
 		ctrl |= VIDEO_SYNC_CTRL_EXT_SYNC_MASK;
-	}
-	if (interlaced) {
-		ctrl |= VIDEO_SYNC_CTRL_ILACE_MASK;
 	}
 	if (videoen) {
 		ctrl |= VIDEO_SYNC_CTRL_VIDEO_EN_MASK;
@@ -1048,9 +1095,14 @@ static int video_sync_probe(struct platform_device *pdev)
 			dev_err(&pdev->dev, "cannot map interrupt\n");
 			return rc;
 		}
-		iowrite32(VIDEO_SYNC_IRQ_PL_ERR_MASK | VIDEO_SYNC_IRQ_SOF_ERR_MASK |
+		irqreg = VIDEO_SYNC_IRQ_PL_ERR_MASK | VIDEO_SYNC_IRQ_SOF_ERR_MASK |
 			VIDEO_SYNC_IRQ_URUN_MASK | VIDEO_SYNC_IRQ_SYNC_TO_MASK |
-			VIDEO_SYNC_IRQ_FRAME_DONE_MASK, regs + VIDEO_SYNC_IRQ_ENABLE_REGISTER);
+			VIDEO_SYNC_IRQ_ERR_SHORT_MASK | VIDEO_SYNC_IRQ_ERR_LONG_MASK |
+			VIDEO_SYNC_IRQ_FRAME_DONE_MASK;
+		if (synchronizers[synchronizers_probed]->interlaced) {
+			irqreg |= VIDEO_SYNC_IRQ_FRAME_SYNC_MASK;
+		}
+		iowrite32(irqreg, regs + VIDEO_SYNC_IRQ_ENABLE_REGISTER);
 	}
 	iowrite32(ctrl, regs + VIDEO_SYNC_CONTROL_REGISTER);
 
@@ -1058,26 +1110,26 @@ static int video_sync_probe(struct platform_device *pdev)
 	if (rc != 0) {
 		return rc;
 	}
-	overlay_vdma_node = of_parse_phandle(node, "overlay-vdma", 0);
-	if (overlay_vdma_node == NULL) {
+	vdma_node = of_parse_phandle(node, "overlay-vdma", 0);
+	if (vdma_node == NULL) {
 		dev_err(&pdev->dev, "no overlay-vdma handle provided\n");
 		return -EINVAL;
 	}
-	if (IS_ERR(overlay_vdma_node)) {
+	if (IS_ERR(vdma_node)) {
 		dev_err(&pdev->dev, "no overlay-vdma handle provided\n");
-		return PTR_ERR(overlay_vdma_node);
+		return PTR_ERR(vdma_node);
 	}
-	overlay_vdma_pdev = of_find_device_by_node(overlay_vdma_node);
-	if (overlay_vdma_pdev == NULL) {
+	vdma_pdev = of_find_device_by_node(vdma_node);
+	if (vdma_pdev == NULL) {
 		dev_err(&pdev->dev, "no overlay vdma pdev found\n");
 		return -EINVAL;
 	}
-	if (IS_ERR(overlay_vdma_pdev)) {
+	if (IS_ERR(vdma_pdev)) {
 		dev_err(&pdev->dev, "no overlay vdma pdev found\n");
-		return PTR_ERR(overlay_vdma_pdev);
+		return PTR_ERR(vdma_pdev);
 	}
 	synchronizers[synchronizers_probed]->overlay_plane.vdma =
-					platform_get_drvdata(overlay_vdma_pdev);
+					platform_get_drvdata(vdma_pdev);
 	if (synchronizers[synchronizers_probed]->overlay_plane.vdma == NULL) {
 		dev_err(&pdev->dev, "no overlay vdma found\n");
 		return -EINVAL;
@@ -1085,6 +1137,33 @@ static int video_sync_probe(struct platform_device *pdev)
 	if (IS_ERR(synchronizers[synchronizers_probed]->overlay_plane.vdma)) {
 		dev_err(&pdev->dev, "no overlay vdma found\n");
 		return PTR_ERR(synchronizers[synchronizers_probed]->overlay_plane.vdma);
+	}
+	vdma_node = of_parse_phandle(node, "video-vdma", 0);
+	if (vdma_node == NULL) {
+		dev_err(&pdev->dev, "no video-vdma handle provided\n");
+		return -EINVAL;
+	}
+	if (IS_ERR(vdma_node)) {
+		dev_err(&pdev->dev, "no video-vdma handle provided\n");
+		return PTR_ERR(vdma_node);
+	}
+	vdma_pdev = of_find_device_by_node(vdma_node);
+	if (vdma_pdev == NULL) {
+		dev_err(&pdev->dev, "no video vdma pdev found\n");
+		return -EINVAL;
+	}
+	if (IS_ERR(vdma_pdev)) {
+		dev_err(&pdev->dev, "no video vdma pdev found\n");
+		return PTR_ERR(vdma_pdev);
+	}
+	synchronizers[synchronizers_probed]->video_vdma = platform_get_drvdata(vdma_pdev);
+	if (synchronizers[synchronizers_probed]->video_vdma == NULL) {
+		dev_err(&pdev->dev, "no video vdma found\n");
+		return -EINVAL;
+	}
+	if (IS_ERR(synchronizers[synchronizers_probed]->video_vdma)) {
+		dev_err(&pdev->dev, "no video vdma found\n");
+		return PTR_ERR(synchronizers[synchronizers_probed]->video_vdma);
 	}
 	ctrl |= VIDEO_SYNC_CTRL_RUN_MASK;
 	iowrite32(ctrl, regs + VIDEO_SYNC_CONTROL_REGISTER);
@@ -1114,12 +1193,16 @@ static int video_sync_probe(struct platform_device *pdev)
 			synchronizers_probed, delay_ext_sync, delay_pl);
 	dev_info(&pdev->dev, "%u ext sync: %u\n", synchronizers_probed, use_ext_sync);
 	dev_info(&pdev->dev, "%u interlaced: %u (vdma slave: %u)\n",
-			synchronizers_probed, interlaced, vdma_slave);
+			synchronizers_probed, synchronizers[synchronizers_probed]->interlaced,
+			vdma_slave);
 	dev_info(&pdev->dev, "%u overlay: %u\n", synchronizers_probed, videoen);
 	dev_info(&pdev->dev, "%u dynamic blend: %u\n", synchronizers_probed, dyn_blend);
 	dev_info(&pdev->dev, "%u irq: %d\n", synchronizers_probed,
 				synchronizers[synchronizers_probed]->irq);
-	dev_info(&pdev->dev, "%u initialized\n", synchronizers_probed);
+	dev_info(&pdev->dev, "%u (overlay: %s video: %s) initialized\n",
+		synchronizers_probed,
+		vdma_get_name(synchronizers[synchronizers_probed]->overlay_plane.vdma),
+		vdma_get_name(synchronizers[synchronizers_probed]->video_vdma));
 
 	++synchronizers_probed;
 	return 0;

@@ -286,9 +286,6 @@ static void vdma_mm2s_start(struct vdma_channel *ch)
 		if (ch->mm2s.irq != -1) {
 			ctrl |= VDMA_MM2S_ERR_IRQ_EN_BITMASK | VDMA_MM2S_FRAME_CNT_IRQ_EN_BITMASK;
 		}
-		if (ch->mm2s.interlaced) {
-			ctrl |= VDMA_MM2S_CIRCULAR_PARK_BITMASK;
-		}
 		if (ch->mm2s.genlock) {
 			ctrl |= VDMA_MM2S_CONTROL_GENLOCK_BITMASK;
 		}
@@ -301,8 +298,6 @@ static void vdma_mm2s_start(struct vdma_channel *ch)
 					ch->regs + VDMA_MM2S_FRMDLY_STRIDE_REGISTER);
 			iowrite32(ch->mm2s.phys_addr_even - ch->mm2s.phys_addr_offset,
 					ch->regs + VDMA_MM2S_START_ADDRESS_REGISTER(0));
-			iowrite32(ch->mm2s.phys_addr_odd - ch->mm2s.phys_addr_offset,
-					ch->regs + VDMA_MM2S_START_ADDRESS_REGISTER(1));
 			iowrite32(ch->mm2s.frame_height / 2, ch->regs + VDMA_MM2S_VSIZE_REGISTER);
 		} else {
 			iowrite32(ch->mm2s.frame_stride,
@@ -1096,6 +1091,20 @@ static int vdma_remove(struct platform_device *pdev)
 		}
 	}
 	return 0;
+}
+
+void vdma_toggle_interlaced_buffer(struct vdma_channel *ch, bool even)
+{
+	if (ch->mm2s.interlaced) {
+		if (even) {
+			iowrite32(ch->mm2s.phys_addr_even - ch->mm2s.phys_addr_offset,
+					ch->regs + VDMA_MM2S_START_ADDRESS_REGISTER(0));
+		} else {
+			iowrite32(ch->mm2s.phys_addr_odd - ch->mm2s.phys_addr_offset,
+					ch->regs + VDMA_MM2S_START_ADDRESS_REGISTER(0));
+		}
+		iowrite32(ch->mm2s.frame_height / 2, ch->regs + VDMA_MM2S_VSIZE_REGISTER);
+	}
 }
 
 u32 vdma_mm2s_get_px_width(struct vdma_channel *ch)

@@ -14,4 +14,6 @@ int vdma_mm2s_get_fb_addr(struct vdma_channel *ch, dma_addr_t *paddr, void **vad
 int vdma_get_px_format(struct vdma_channel *ch, u32 *fmt);
 const char *vdma_get_name(struct vdma_channel *ch);
 
+void vdma_toggle_interlaced_buffer(struct vdma_channel *ch, bool even);
+
 #endif
